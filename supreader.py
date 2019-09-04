@@ -4,6 +4,7 @@ from bufferedrandomplus import BufferedRandomPlus
 from pprint import pprint
 import time
 import io
+import itertools
 import numpy as np
 from PIL import Image
 
@@ -40,21 +41,36 @@ class SupReader:
 
     def iterSegments(self):
         ds = []
+        ep = []
         self._displaySets = []
+        self._epochs = []
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             self._stream = BufferedRandomPlus(_)
             stream = self._stream
             while stream.peekByte():
                 segment = Segment(stream)
+                yield segment
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
-                    self._displaySets.append(DisplaySet(ds))
+                    dsObj = DisplaySet(ds)
+                    ep.append(dsObj)
+                    self._displaySets.append(dsObj)
                     ds = []
-                yield segment
+                elif ep \
+                and segment.type == SEGMENT_TYPE.PCS \
+                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
+                    self._epochs.append(Epoch(ep))
+                    ep = []
+            if ds:
+                print("Warning: [Read Stream] The last epoch lacks END segment")
+            self._epochs.append(Epoch(ep))
+                
     
     def iterDisplaySets(self):
         ds = []
+        ep = []
         self._segments = []
+        self._epochs = []
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             self._stream = BufferedRandomPlus(_)
             stream = self._stream
@@ -63,8 +79,45 @@ class SupReader:
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
-                    yield DisplaySet(ds)
+                    dsObj = DisplaySet(ds)
+                    yield dsObj
+                    ep.append(dsObj)
                     ds = []
+                elif ep \
+                and segment.type == SEGMENT_TYPE.PCS \
+                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
+                    self._epochs.append(Epoch(ep))
+                    ep = []
+            if ds:
+                print("Warning: [Read Stream] The last epoch lacks END segment")
+            self._epochs.append(Epoch(ep))
+
+    def iterEpochs(self):
+        ds = []
+        ep = []
+        self._segments = []
+        self._displaySets = []
+        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+            self._stream = BufferedRandomPlus(_)
+            stream = self._stream
+            while stream.peekByte():
+                segment = Segment(stream)
+                self._segments.append(segment)
+                ds.append(segment)
+                if segment.type == SEGMENT_TYPE.END:
+                    dsObj = DisplaySet(ds)
+                    ep.append(dsObj)
+                    self._displaySets.append(dsObj)
+                    ds = []
+                elif ep \
+                and segment.type == SEGMENT_TYPE.PCS \
+                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
+                    yield Epoch(ep)
+                    ep = []
+                    flag = True
+            if ds:
+                print("Warning: [Read Stream] The last epoch lacks END segment")
+            yield Epoch(ep)
 
     @property
     def segments(self):
@@ -77,6 +130,12 @@ class SupReader:
         if not hasattr(self, '_displaySets'):
             self._displaySets = list(self.iterDisplaySets())
         return self._displaySets
+
+    @property
+    def epochs(self):
+        if not hasattr(self, '_epochs'):
+            self._epochs = list(self.iterEpochs())
+        return self._epochs
 
 class PresentationCompositionSegment:
     
@@ -381,6 +440,12 @@ class DisplaySet:
     def getType(self, sType):
         return [s for s in self.segments if s.type == sType]
 
+class Epoch:
+
+    def __init__(self, displaySets):
+        self.displaySets = displaySets
+        self.segments = list(itertools.chain(*[ds.segments for ds in displaySets]))
+
 def rleDecode(rawData):
     lineBuilder = []
     pixels = []
@@ -423,17 +488,20 @@ if __name__ == '__main__':
     #pr = cProfile.Profile()
     #pr.enable()
 
-    x = SupReader('test.sup')
-    #x = SupReader('[Nekomoe kissaten&VCB-Studio] Owarimonogatari S2 [01][Ma10p_1080p][x265_2flac].sc.sup')
+    #x = SupReader('test.sup')
+    x = SupReader('[Nekomoe kissaten&VCB-Studio] Owarimonogatari S2 [01][Ma10p_1080p][x265_2flac].sc.sup')
     ss = x.segments
     dss = x.displaySets
+    eps = x.epochs
+    pprint([[s.data.compositionState for s in ep.segments if s.type == SEGMENT_TYPE.PCS] for ep in eps])
+    '''
     for i, ds in enumerate(dss):
         try:
             for j, img in enumerate(ds.image):
                 img.save(f'{i}{j}.png')
         except:
             pass
-
+    '''
     #pr.disable()
     #s = io.StringIO()
     #ps = pstats.Stats(pr, stream=s)
