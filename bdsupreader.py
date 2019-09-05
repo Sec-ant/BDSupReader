@@ -373,7 +373,15 @@ class DisplaySet:
 
     def __init__(self, segments):
         self.segments = segments
-        self.segmentTypes = [s.type for s in segments]
+
+    @property
+    def pcsSegment(self):
+        if not hasattr(self, '_pcsSegment'):
+            pcs = next((s for s in self.getType(SEGMENT_TYPE.PCS)), None)
+            self._pcsSegment = pcs
+            if pcs is not self.segments[0]:
+                print('Warning: [Display Set] PCS is not the first segment')
+        return self._pcsSegment
 
     @property
     def rle(self):
@@ -384,19 +392,26 @@ class DisplaySet:
             for ods in self.getType(SEGMENT_TYPE.ODS):
                 data = ods.data
                 currID = data.objectID
+                # Different object ID, so there're two different objects
                 if currID != prevID and prevID != -1:
-                    rle.append(seed)
+                    rle.append({'id': prevID, 'data': seed})
                     seed = b''
+                # Same object ID, so we have to combine the image data together
                 prevID = currID
                 seed += data.imgData
-            rle.append(seed)
-            self._rle = rle
+            # One display set may have more than one objects, they have different object IDs
+            # The number of objects is also indicated at PCS segment's number of composition objects field
+            if prevID == -1:
+                self._rle = []
+            else:
+                rle.append({'id': prevID, 'data': seed})
+                self._rle = rle
         return self._rle
 
     @property
     def pix(self):
         if not hasattr(self, '_pix'):
-            self._pix = [rleDecode(rle) for rle in self.rle]
+            self._pix = [{'id': rle['id'], 'data': rleDecode(rle['data'])} for rle in self.rle]
         return self._pix
     
     @property
@@ -409,7 +424,7 @@ class DisplaySet:
     @property
     def image(self):
         if not hasattr(self, '_image'):
-            self._image = [self.makeImage(pix) for pix in self.pix]
+            self._image = [{'id': pix['id'], 'data': self.makeImage(pix['data'])} for pix in self.pix]
         return self._image
 
     @property
@@ -424,6 +439,33 @@ class DisplaySet:
             self._alpha = self.pds.alpha
         return self._alpha
     
+    @property
+    def screenImage(self):
+        if not hasattr(self, '_screenImage'):
+            if self.pcsSegment.data.numberOfCompositionObjects > 0:
+                transparentEntryPoint = next(i for i, a in enumerate(self.alpha) if a == 0)
+                background = np.full((self.pcsSegment.data.height, self.pcsSegment.data.width), transparentEntryPoint, dtype = np.uint8)
+                for obj in self.pcsSegment.data.compositionObjects:
+                    pix = next(p['data'] for p in self.pix if p['id'] == obj.objectID)
+                    height, width = pix.shape
+                    if obj.cropped:
+                        cropXPos = obj.cropXPos or 0
+                        cropYPos = obj.cropYPos or 0
+                        xStart = max(cropXPos, 0)
+                        yStart = max(cropYPos, 0)
+                        xEnd = min(cropXPos + obj.cropWidth, width)
+                        yEnd = min(cropYPos + obj.cropHeight, height)
+                        height = yEnd - yStart
+                        width = xEnd - xStart
+                        croppedPix = pix[yStart:yEnd, xStart:xEnd]
+                    else:
+                        croppedPix = pix
+                    background[obj.yPos:(obj.yPos + height), obj.xPos:(obj.xPos + width)] = croppedPix
+                self._screenImage = self.makeImage(background)
+            else:
+                self._screenImage = None
+        return self._screenImage
+
     def makeImage(self, pixelLayer):
         alphaLayer = np.array([[self.alpha[x] for x in l] for l in pixelLayer], dtype = np.uint8)
         rgbPalette = self.rgb
@@ -488,20 +530,20 @@ if __name__ == '__main__':
     #pr = cProfile.Profile()
     #pr.enable()
 
-    #x = SupReader('test.sup')
-    x = SupReader('[Nekomoe kissaten&VCB-Studio] Owarimonogatari S2 [01][Ma10p_1080p][x265_2flac].sc.sup')
+    x = SupReader('Thor2.sup')
+    #x = SupReader('[Nekomoe kissaten&VCB-Studio] Owarimonogatari S2 [01][Ma10p_1080p][x265_2flac].sc.sup')
     ss = x.segments
     dss = x.displaySets
     eps = x.epochs
-    pprint([[s.data.compositionState for s in ep.segments if s.type == SEGMENT_TYPE.PCS] for ep in eps])
-    '''
+    #pprint([[s.data.compositionState for s in ep.segments if s.type == SEGMENT_TYPE.PCS] for ep in eps])
+    #pprint([[s.ptsms for s in ds.segments] for ds in dss])
+    #pprint([[[(w.xPos, w.yPos) for w in s.data.windowObjects] for s in ep.segments if s.type == SEGMENT_TYPE.WDS] for ep in eps])
+    #pprint([[s.data.paletteID for s in ep.segments if s.type == SEGMENT_TYPE.PDS] for ep in eps])
+    #pprint([[(w.xPos, w.yPos) for w in s.data.windowObjects] for s in ss if s.type == SEGMENT_TYPE.WDS])
+    #pprint([[(o.xPos, o.yPos) for o in s.data.compositionObjects] for s in ss if s.type == SEGMENT_TYPE.PCS and s.data.compositionState == COMPOSITION_STATE.EPOCH_START])
     for i, ds in enumerate(dss):
-        try:
-            for j, img in enumerate(ds.image):
-                img.save(f'{i}{j}.png')
-        except:
-            pass
-    '''
+        if ds.screenImage:
+            ds.screenImage.save(f'result/{i}.png')
     #pr.disable()
     #s = io.StringIO()
     #ps = pstats.Stats(pr, stream=s)
