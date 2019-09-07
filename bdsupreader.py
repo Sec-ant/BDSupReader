@@ -71,7 +71,7 @@ class BDSupReader:
                     self._epochs.append(Epoch(ep))
                     ep = []
             if ds:
-                print("Warning: [Read Stream] The last display set lacks END segment")
+                print('Warning: [Read Stream] The last display set lacks END segment')
                 dsObj = DisplaySet(ds)
                 self._displaySets.appen(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
@@ -126,7 +126,7 @@ class BDSupReader:
                     self._epochs.append(Epoch(ep))
                     ep = []
             if ds:
-                print("Warning: [Read Stream] The last display set lacks END segment")
+                print('Warning: [Read Stream] The last display set lacks END segment')
                 dsObj = DisplaySet(ds)
                 yield dsObj
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
@@ -181,7 +181,7 @@ class BDSupReader:
                     ep = []
                     flag = True
             if ds:
-                print("Warning: [Read Stream] The last display set lacks END segment")
+                print('Warning: [Read Stream] The last display set lacks END segment')
                 dsObj = DisplaySet(ds)
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
@@ -236,7 +236,7 @@ class BDSupReader:
                     ep = []
                     flag = True
             if ds:
-                print("Warning: [Read Stream] The last display set lacks END segment")
+                print('Warning: [Read Stream] The last display set lacks END segment')
                 dsObj = DisplaySet(ds)
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
@@ -377,7 +377,7 @@ class PaletteDefinitionSegment:
 
     xForm = np.array([[255/219, 255/224*1.402, 0],
         [255/219, -255/224*1/402*0.299/0.587, -255/224*1.772*0.114/0.587], 
-        [255/219, 0, 255/224*1.772]])
+        [255/219, 0, 255/224*1.772]], dtype = np.float)
     
     def __init__(self, stream, parent):
         self._parent = parent
@@ -387,7 +387,7 @@ class PaletteDefinitionSegment:
 
     def getPalette(self, stream):
         # (Y, Cr, Cb) = (235, 128, 128) is white
-        palette = [[235, 128, 128, 0]] * 256
+        palette = np.array([[235, 128, 128, 0]], dtype = np.uint8).repeat(256, axis = 0)
         stop = stream.offset + len(self.parent) - 2
         length = stop - stream.offset
         table = stream.readBytes(length)
@@ -396,7 +396,7 @@ class PaletteDefinitionSegment:
         return palette
 
     def YCrCb2RGB(self, YCrCb):
-        RGB = np.array(YCrCb, dtype = np.float)
+        RGB = np.asarray(YCrCb, dtype = np.float)
         RGB -= [16, 128, 128]
         RGB = RGB.dot(self.xForm.T)
         np.putmask(RGB, RGB > 255, 255)
@@ -406,13 +406,15 @@ class PaletteDefinitionSegment:
     @property
     def YCrCb(self):
         if not hasattr(self, '_YCrCb'):
-            self._YCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
+            self._YCrCb = self.palette[:, 0:3]
+            self._alpha = self.palette[:, 3]
         return self._YCrCb
 
     @property
     def alpha(self):
         if not hasattr(self, '_alpha'):
-            self._YCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
+            self._YCrCb = self.palette[:, 0:3]
+            self._alpha = self.palette[:, 3]
         return self._alpha
 
     @property
@@ -610,7 +612,7 @@ class DisplaySet:
         return self._screenImage
 
     def makeImage(self, pixelLayer):
-        alphaLayer = np.array([[self.alpha[x] for x in l] for l in pixelLayer], dtype = np.uint8)
+        alphaLayer = self.alpha[pixelLayer]
         RGBPalette = self.RGB
         alphaImage = Image.fromarray(alphaLayer, mode='L')
         pixelImage = Image.fromarray(pixelLayer, mode='P')
@@ -752,37 +754,43 @@ def ms2hmsx(ms):
 def RLEDecode(rawData):
     lineBuilder = []
     pixels = []
+    offset = 0
+    length = len(rawData)
 
-    with io.BytesIO(rawData) as _:
-        stream = BufferedRandomPlus(io.BufferedRandom(_))
-
-        while stream.offset < len(rawData):
-            first = stream.readUChar()
-            if first:
-                color = first
-                length = 1
+    while offset < length:
+        first = rawData[offset]
+        if first:
+            entry = first
+            repeat = 1
+            skip = 1
+        else:
+            second = rawData[offset + 1]
+            if second == 0:
+                entry = 0
+                repeat = 0
+                pixels.append(lineBuilder)
+                lineBuilder = []
+                skip = 2
+            elif second < 64:
+                entry = 0
+                repeat = second
+                skip = 2
+            elif second < 128:
+                entry = 0
+                repeat = ((second - 64) << 8) + rawData[offset + 2]
+                skip = 3
+            elif second < 192:
+                entry = rawData[offset + 2]
+                repeat = second - 128
+                skip = 3
             else:
-                second = stream.readUChar()
-                if second == 0:
-                    color = 0
-                    length = 0
-                    pixels.append(lineBuilder)
-                    lineBuilder = []
-                elif second < 64:
-                    color = 0
-                    length = second
-                elif second < 128:
-                    color = 0
-                    length = ((second - 64) << 8) + stream.readUChar()
-                elif second < 192:
-                    color = stream.readUChar()
-                    length = second - 128
-                else:
-                    length = ((second - 192) << 8) + stream.readUChar()
-                    color = stream.readUChar()
-            lineBuilder.extend([color] * length)
-        
+                entry = rawData[offset + 3]
+                repeat = ((second - 192) << 8) + rawData[offset + 2]
+                skip = 4
+        lineBuilder.extend([entry] * repeat)
+        offset += skip
+
     if lineBuilder:
         print(f'Warning: [RLE] Hanging pixels without line ending: {lineBuilder}')
-     
-    return np.asarray(pixels, dtype=np.uint8)
+
+    return np.asarray(pixels, dtype = np.uint8)
