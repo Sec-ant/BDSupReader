@@ -659,6 +659,14 @@ class SubPicture:
         return self.displaySet.pcsSegment.ptsms
 
     @property
+    def startTimehmsx(self):
+        return ms2hmsx(self.startTimems)
+    
+    @property
+    def startTimeStr(self):
+        return ms2Str(self.startTimems)
+
+    @property
     def endTime(self):
         return self._endTime
     @endTime.setter
@@ -669,6 +677,22 @@ class SubPicture:
     def endTimems(self):
         if self.endTime is not None:
             return self.endTime/90
+        else:
+            return None
+
+    @property
+    def endTimehmsx(self):
+        t = self.endTimems
+        if t is not None:
+            return ms2hmsx(t)
+        else:
+            return None
+    
+    @property
+    def endTimeStr(self):
+        t = self.endTimems 
+        if t is not None:
+            return ms2Str(t)
         else:
             return None
 
@@ -685,7 +709,23 @@ class SubPicture:
             return self.endTimems - self.startTimems
         else:
             return None
-    
+  
+    @property
+    def durationhmsx(self):
+        t = self.durationms
+        if t is not None:
+            return ms2hmsx(t)
+        else:
+            return None
+
+    @property
+    def durationStr(self):
+        t = self.durationms
+        if t is not None:
+            return ms2Str(t)
+        else:
+            return None
+
     @property
     def maxAlpha(self):
         return max(self.displaySet.alpha)
@@ -697,7 +737,20 @@ class SubPicture:
     @property
     def screenImage(self):
         return self.displaySet.screenImage
-    
+
+def ms2Str(ms):
+    return hmsx2Str(*ms2hmsx(ms))
+
+def hmsx2Str(h, m, s, x):
+    return '{:02.0f}:{:02.0f}:{:02.0f}.{:03.0f}'.format(h, m, s, x)
+
+def ms2hmsx(ms):
+    x = ms % 1000
+    s = (ms // 1000) % 60
+    m = (ms // 60000) % 60
+    h = ms // 3600000
+    return h, m ,s, x
+
 def RLEDecode(rawData):
     lineBuilder = []
     pixels = []
