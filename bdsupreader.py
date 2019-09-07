@@ -26,7 +26,7 @@ class SEQUENCE(Enum):
 
     FIRST = b'\x40'
     LAST = b'\x80'
-    FISRT_LAST = b'\xC0'
+    FIRST_LAST = b'\xC0'
 
 class BDSupReader:
     
