@@ -386,24 +386,22 @@ class PaletteDefinitionSegment:
         self.palette = self.getPalette(stream)
 
     def getPalette(self, stream):
-        palette = [[16, 128, 128, 0]] * 256
+        # (Y, Cr, Cb) = (235, 128, 128) is white
+        palette = [[235, 128, 128, 0]] * 256
         stop = stream.offset + len(self.parent) - 2
-        while stream.offset < stop:
-            entry = stream.readUChar()
-            y = stream.readUChar()
-            cr = stream.readUChar()
-            cb = stream.readUChar()
-            alpha = stream.readUChar()
-            palette[entry] = [y, cr, cb, alpha]
+        length = stop - stream.offset
+        table = stream.readBytes(length)
+        for i in range(0, length, 5):
+            palette[table[i]] = [table[i + 1], table[i + 2], table[i + 3], table[i + 4]]
         return palette
 
     def YCrCb2RGB(self, YCrCb):
-        rgb = np.array(YCrCb, dtype = np.float)
-        rgb -= [16, 128, 128]
-        rgb = rgb.dot(self.xForm.T)
-        np.putmask(rgb, rgb > 255, 255)
-        np.putmask(rgb, rgb < 0, 0)
-        return np.uint8(rgb)
+        RGB = np.array(YCrCb, dtype = np.float)
+        RGB -= [16, 128, 128]
+        RGB = RGB.dot(self.xForm.T)
+        np.putmask(RGB, RGB > 255, 255)
+        np.putmask(RGB, RGB < 0, 0)
+        return np.uint8(RGB)
 
     @property
     def YCrCb(self):
@@ -418,10 +416,10 @@ class PaletteDefinitionSegment:
         return self._alpha
 
     @property
-    def rgb(self):
-        if not hasattr(self, '_rgb'):
-            self._rgb = self.YCrCb2RGB(self.YCrCb)
-        return self._rgb
+    def RGB(self):
+        if not hasattr(self, '_RGB'):
+            self._RGB = self.YCrCb2RGB(self.YCrCb)
+        return self._RGB
 
     @property
     def parent(self):
@@ -571,10 +569,10 @@ class DisplaySet:
         return self._pds
     
     @property
-    def rgb(self):
-        if not hasattr(self, '_rgb'):
-            self._rgb = self.pds.rgb
-        return self._rgb
+    def RGB(self):
+        if not hasattr(self, '_RGB'):
+            self._RGB = self.pds.RGB
+        return self._RGB
     
     @property
     def alpha(self):
@@ -613,13 +611,13 @@ class DisplaySet:
 
     def makeImage(self, pixelLayer):
         alphaLayer = np.array([[self.alpha[x] for x in l] for l in pixelLayer], dtype = np.uint8)
-        rgbPalette = self.rgb
+        RGBPalette = self.RGB
         alphaImage = Image.fromarray(alphaLayer, mode='L')
         pixelImage = Image.fromarray(pixelLayer, mode='P')
-        pixelImage.putpalette(rgbPalette)
-        rgbaImage = pixelImage.convert('RGB')
-        rgbaImage.putalpha(alphaImage)
-        return rgbaImage
+        pixelImage.putpalette(RGBPalette)
+        RGBAImage = pixelImage.convert('RGB')
+        RGBAImage.putalpha(alphaImage)
+        return RGBAImage
 
     def hasType(self, sType):
         return sType in self.segmentTypes

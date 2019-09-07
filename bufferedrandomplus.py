@@ -323,10 +323,3 @@ class BufferedRandomPlus:
     @property
     def offset(self):
         return self._offset
-
-if __name__ == '__main__':
-    with open('test.sup', 'r+b', buffering = 1024*1024) as f:
-        fw = BufferedRandomPlus(f)
-        print(fw.peekWord(1), fw.peekWord(2), fw.readDWord(), fw.peekDWord())
-        print(fw.peekUShort(1), fw.peekUShort(2), fw.readUInt(), fw.peekDWord())
-
