@@ -1,12 +1,8 @@
-import cProfile, pstats, io
-from enum  import Enum
-from bufferedrandomplus import BufferedRandomPlus
-from pprint import pprint
-import time
-import io
-import itertools
+import io, os, itertools
 import numpy as np
+from enum  import Enum
 from PIL import Image
+from bufferedrandomplus import BufferedRandomPlus
 
 class InvalidSegmentError(Exception):
     pass
@@ -32,7 +28,7 @@ class SEQUENCE(Enum):
     LAST = b'\x80'
     FISRT_LAST = b'\xC0'
 
-class SupReader:
+class BDSupReader:
     
     def __init__(self, filePath, bufferSize=1024*1024, verbose=False):
         self.filePath = filePath
@@ -44,17 +40,27 @@ class SupReader:
         ep = []
         self._displaySets = []
         self._epochs = []
+        self._subPictures = []
+        subPicture = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+            if not hasattr(self, '_size'):
+                self._size = os.fstat(_.fileno()).st_size
             self._stream = BufferedRandomPlus(_)
             stream = self._stream
-            while stream.peekByte():
+            while stream.offset < self._size:
                 segment = Segment(stream)
                 yield segment
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
                     dsObj = DisplaySet(ds)
-                    ep.append(dsObj)
                     self._displaySets.append(dsObj)
+                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        subPicture = SubPicture(dsObj)
+                    else:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
+                        subPicture = None
+                    ep.append(dsObj)
                     ds = []
                 elif ep \
                 and segment.type == SEGMENT_TYPE.PCS \
@@ -62,7 +68,19 @@ class SupReader:
                     self._epochs.append(Epoch(ep))
                     ep = []
             if ds:
-                print("Warning: [Read Stream] The last epoch lacks END segment")
+                print("Warning: [Read Stream] The last display set lacks END segment")
+                dsObj = DisplaySet(ds)
+                self._displaySets.appen(dsObj)
+                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    subPicture = subPicture(dsObj)
+                else:
+                    subPicture.endTime = dsObj.pcsSegment.pts
+                    self._subPictures.append(subPicture)
+                    subPicture = None
+                ep.append(dsObj)
+            if subPicture:
+                print('Warning: [Read Stream] The last sub picture lacks end time')
+                self._subPictures.append(subPicture)
             self._epochs.append(Epoch(ep))
                 
     
@@ -71,16 +89,26 @@ class SupReader:
         ep = []
         self._segments = []
         self._epochs = []
+        self._subPictures = []
+        subPicture = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+            if not hasattr(self, '_size'):
+                self._size = os.fstat(_.fileno()).st_size
             self._stream = BufferedRandomPlus(_)
             stream = self._stream
-            while stream.peekByte():
+            while stream.offset < self._size:
                 segment = Segment(stream)
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
                     dsObj = DisplaySet(ds)
                     yield dsObj
+                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        subPicture = SubPicture(dsObj)
+                    else:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
+                        subPicture = None
                     ep.append(dsObj)
                     ds = []
                 elif ep \
@@ -89,7 +117,19 @@ class SupReader:
                     self._epochs.append(Epoch(ep))
                     ep = []
             if ds:
-                print("Warning: [Read Stream] The last epoch lacks END segment")
+                print("Warning: [Read Stream] The last display set lacks END segment")
+                dsObj = DisplaySet(ds)
+                yield dsObj
+                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    subPicture = subPicture(dsObj)
+                else:
+                    subPicture.endTime = dsObj.pcsSegment.pts
+                    self._subPictures.append(subPicture)
+                    subPicture = None
+                ep.append(dsObj)
+            if subPicture:
+                print('Warning: [Read Stream] The last sub picture lacks end time')
+                self._subPictures.append(subPicture)
             self._epochs.append(Epoch(ep))
 
     def iterEpochs(self):
@@ -97,15 +137,25 @@ class SupReader:
         ep = []
         self._segments = []
         self._displaySets = []
+        self._subPictures = []
+        subPicture = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+            if not hasattr(self, '_size'):
+                self._size = os.fstat(_.fileno()).st_size
             self._stream = BufferedRandomPlus(_)
             stream = self._stream
-            while stream.peekByte():
+            while stream.offset < self._size:
                 segment = Segment(stream)
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
                     dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        subPicture = SubPicture(dsObj)
+                    else:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
+                        subPicture = None
                     ep.append(dsObj)
                     self._displaySets.append(dsObj)
                     ds = []
@@ -116,9 +166,70 @@ class SupReader:
                     ep = []
                     flag = True
             if ds:
-                print("Warning: [Read Stream] The last epoch lacks END segment")
+                print("Warning: [Read Stream] The last display set lacks END segment")
+                dsObj = DisplaySet(ds)
+                self._displaySets.append(dsObj)
+                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    subPicture = subPicture(dsObj)
+                else:
+                    subPicture.endTime = dsObj.pcsSegment.pts
+                    self._subPictures.append(subPicture)
+                    subPicture = None
+                ep.append(dsObj)
+            if subPicture:
+                print('Warning: [Read Stream] The last sub picture lacks end time')
+                self._subPictures.append(subPicture)
             yield Epoch(ep)
 
+    def iterSubPictures(self):
+        ds = []
+        ep = []
+        self._segments = []
+        self._displaySets = []
+        self._epochs = []
+        subPicture = None
+        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+            if not hasattr(self, '_size'):
+                self._size = os.fstat(_.fileno()).st_size
+            self._stream = BufferedRandomPlus(_)
+            stream = self._stream
+            while stream.offset < self._size:
+                segment = Segment(stream)
+                self._segments.append(segment)
+                ds.append(segment)
+                if segment.type == SEGMENT_TYPE.END:
+                    dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        subPicture = SubPicture(dsObj)
+                    else:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        yield subPicture
+                        subPicture = None
+                    ep.append(dsObj)
+                    self._displaySets.append(dsObj)
+                    ds = []
+                elif ep \
+                and segment.type == SEGMENT_TYPE.PCS \
+                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
+                    self.epochs.append(Epoch(ep))
+                    ep = []
+                    flag = True
+            if ds:
+                print("Warning: [Read Stream] The last display set lacks END segment")
+                dsObj = DisplaySet(ds)
+                self._displaySets.append(dsObj)
+                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    subPicture = subPicture(dsObj)
+                else:
+                    subPicture.endTime = dsObj.pcsSegment.pts
+                    yield subPicture
+                    subPicture = None
+                ep.append(dsObj)
+            if subPicture:
+                print('Warning: [Read Stream] The last sub picture lacks end time')
+                yield subPicture
+            self._epochs.append(Epoch(ep))
+        
     @property
     def segments(self):
         if not hasattr(self, '_segments'):
@@ -137,6 +248,12 @@ class SupReader:
             self._epochs = list(self.iterEpochs())
         return self._epochs
 
+    @property
+    def subPictures(self):
+        if not hasattr(self, '_subPictures'):
+            self._subPictures = list(self.iterSubPictures())
+        return self._subPictures
+
 class PresentationCompositionSegment:
     
     class CompositionObject:
@@ -153,6 +270,11 @@ class PresentationCompositionSegment:
                 self.cropYPos = stream.readUShort()
                 self.cropWidth = stream.readUShort()
                 self.cropHeight = stream.readUShort()
+            else:
+                self.cropXPos = None
+                self.cropYPos = None
+                self.cropWidth = None
+                self.cropHeight = None
 
         @property
         def parent(self):
@@ -228,6 +350,10 @@ class WindowDefinitionSegment:
         return self._parent
 
 class PaletteDefinitionSegment:
+
+    xForm = np.array([[255/219, 255/224*1.402, 0],
+        [255/219, -255/224*1/402*0.299/0.587, -255/224*1.772*0.114/0.587], 
+        [255/219, 0, 255/224*1.772]])
     
     def __init__(self, stream, parent):
         self._parent = parent
@@ -247,33 +373,30 @@ class PaletteDefinitionSegment:
             palette[entry] = [y, cr, cb, alpha]
         return palette
 
-    def yCrCb2RGB(self, yCrCb):
-        xForm = np.array([[255/219, 255/224*1.402, 0],
-            [255/219, -255/224*1/402*0.299/0.587, -255/224*1.772*0.114/0.587], 
-            [255/219, 0, 255/224*1.772]])
-        rgb = np.array(yCrCb, dtype = np.float)
+    def YCrCb2RGB(self, YCrCb):
+        rgb = np.array(YCrCb, dtype = np.float)
         rgb -= [16, 128, 128]
-        rgb = rgb.dot(xForm.T)
+        rgb = rgb.dot(self.xForm.T)
         np.putmask(rgb, rgb > 255, 255)
         np.putmask(rgb, rgb < 0, 0)
         return np.uint8(rgb)
 
     @property
-    def yCrCb(self):
-        if not hasattr(self, '_yCrCb'):
-            self._yCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
-        return self._yCrCb
+    def YCrCb(self):
+        if not hasattr(self, '_YCrCb'):
+            self._YCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
+        return self._YCrCb
 
     @property
     def alpha(self):
         if not hasattr(self, '_alpha'):
-            self._yCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
+            self._YCrCb, self._alpha = [list(x) for x in zip(*[(p[:-1], p[-1]) for p in self.palette])]
         return self._alpha
 
     @property
     def rgb(self):
         if not hasattr(self, '_rgb'):
-            self._rgb = self.yCrCb2RGB(self.yCrCb)
+            self._rgb = self.YCrCb2RGB(self.YCrCb)
         return self._rgb
 
     @property
@@ -288,7 +411,7 @@ class ObjectDefinitionSegment:
         self.version = stream.readUChar()
         self.sequence = stream.readByte()
         
-        # Fisrt Fragment: has data Length, width and height fields
+        # First Fragment: has data Length, width and height fields
         if self.isFirst:
             self.dataLength = int.from_bytes(stream.readBytes(3), byteorder = 'big')
             self.width = stream.readUShort()
@@ -302,6 +425,8 @@ class ObjectDefinitionSegment:
             dataLength = len(self.parent) - 4
             self.dataLength = dataLength
             # No width or height, so we don't need to minus 4
+            self.width = None
+            self.height = None
             self.imgData = stream.readBytes(dataLength)
         
         # Single Fragment Correction
@@ -323,12 +448,6 @@ class ObjectDefinitionSegment:
     @property
     def isLast(self):
         return bytes([self.sequence[0] & b'\x40'[0]]) == b'\x40'
-
-    @property
-    def rle(self):
-        if not hasattr(self, '_rle'):
-            self._rle = self.RLEChunk(self.imgData, self)
-        return self._rle
 
 class EndSegment:
     
@@ -384,9 +503,9 @@ class DisplaySet:
         return self._pcsSegment
 
     @property
-    def rle(self):
-        if not hasattr(self, '_rle'):
-            rle = []
+    def RLE(self):
+        if not hasattr(self, '_RLE'):
+            RLE = []
             seed = b''
             prevID = -1
             for ods in self.getType(SEGMENT_TYPE.ODS):
@@ -394,7 +513,7 @@ class DisplaySet:
                 currID = data.objectID
                 # Different object ID, so there're two different objects
                 if currID != prevID and prevID != -1:
-                    rle.append({'id': prevID, 'data': seed})
+                    RLE.append({'id': prevID, 'data': seed})
                     seed = b''
                 # Same object ID, so we have to combine the image data together
                 prevID = currID
@@ -402,24 +521,17 @@ class DisplaySet:
             # One display set may have more than one objects, they have different object IDs
             # The number of objects is also indicated at PCS segment's number of composition objects field
             if prevID == -1:
-                self._rle = []
+                self._RLE = []
             else:
-                rle.append({'id': prevID, 'data': seed})
-                self._rle = rle
-        return self._rle
+                RLE.append({'id': prevID, 'data': seed})
+                self._RLE = RLE
+        return self._RLE
 
     @property
     def pix(self):
         if not hasattr(self, '_pix'):
-            self._pix = [{'id': rle['id'], 'data': rleDecode(rle['data'])} for rle in self.rle]
+            self._pix = [{'id': RLE['id'], 'data': RLEDecode(RLE['data'])} for RLE in self.RLE]
         return self._pix
-    
-    @property
-    def pds(self):
-        if not hasattr(self, '_pds'):
-            self._pds = next((p.data for p in self.getType(SEGMENT_TYPE.PDS)
-                if p.data.paletteID == self.getType(SEGMENT_TYPE.PCS)[0].data.paletteID), None)
-        return self._pds
     
     @property
     def image(self):
@@ -427,6 +539,13 @@ class DisplaySet:
             self._image = [{'id': pix['id'], 'data': self.makeImage(pix['data'])} for pix in self.pix]
         return self._image
 
+    @property
+    def pds(self):
+        if not hasattr(self, '_pds'):
+            self._pds = next((p.data for p in self.getType(SEGMENT_TYPE.PDS)
+                if p.data.paletteID == self.getType(SEGMENT_TYPE.PCS)[0].data.paletteID), None)
+        return self._pds
+    
     @property
     def rgb(self):
         if not hasattr(self, '_rgb'):
@@ -447,20 +566,22 @@ class DisplaySet:
                 background = np.full((self.pcsSegment.data.height, self.pcsSegment.data.width), transparentEntryPoint, dtype = np.uint8)
                 for obj in self.pcsSegment.data.compositionObjects:
                     pix = next(p['data'] for p in self.pix if p['id'] == obj.objectID)
-                    height, width = pix.shape
-                    if obj.cropped:
-                        cropXPos = obj.cropXPos or 0
-                        cropYPos = obj.cropYPos or 0
-                        xStart = max(cropXPos, 0)
-                        yStart = max(cropYPos, 0)
-                        xEnd = min(cropXPos + obj.cropWidth, width)
-                        yEnd = min(cropYPos + obj.cropHeight, height)
-                        height = yEnd - yStart
-                        width = xEnd - xStart
-                        croppedPix = pix[yStart:yEnd, xStart:xEnd]
-                    else:
-                        croppedPix = pix
-                    background[obj.yPos:(obj.yPos + height), obj.xPos:(obj.xPos + width)] = croppedPix
+                    windowID = next(c.windowID for c in self.pcsSegment.data.compositionObjects if c.objectID == obj.objectID)
+                    wobj = next(w for w in self.getType(SEGMENT_TYPE.WDS)[0].data.windowObjects if w.windowID == windowID)
+                    xPos, yPos, (height, width) = obj.xPos, obj.yPos, pix.shape
+                    windowXPos, windowYPos, windowWidth, windowHeight = wobj.xPos, wobj.yPos, wobj.width, wobj.height
+                    cropXPos, cropYPos, cropWidth, cropHeight = obj.cropXPos or 0, obj.cropYPos or 0, obj.cropWidth or width, obj.cropHeight or height
+
+                    xStart = max(cropXPos, 0)
+                    yStart = max(cropYPos, 0)
+                    xEnd = min(cropXPos + cropWidth, width)
+                    yEnd = min(cropYPos + cropHeight, height)
+                    height = yEnd - yStart
+                    width = xEnd - xStart
+                    croppedPix = pix[yStart:yEnd, xStart:xEnd]
+                    background[yPos:(yPos + height), xPos:(xPos + width)] = croppedPix
+                    background[yPos:windowYPos, xPos:windowXPos] = transparentEntryPoint
+                    background[(windowYPos + windowHeight):(yPos + height), (windowXPos + windowWidth):(xPos + width)] = transparentEntryPoint
                 self._screenImage = self.makeImage(background)
             else:
                 self._screenImage = None
@@ -486,16 +607,81 @@ class Epoch:
 
     def __init__(self, displaySets):
         self.displaySets = displaySets
-        self.segments = list(itertools.chain(*[ds.segments for ds in displaySets]))
+    
+    @property
+    def segments(self):
+        if not hasattr(self, '_segments'):
+            self._segments = list(itertools.chain(*[ds.segments for ds in self.displaySets]))
+        return self._segments
 
-def rleDecode(rawData):
+class SubPicture:
+
+    def __init__(self, displaySet):
+        self.displaySet = displaySet
+        self._endTime = None
+
+    @property
+    def segments(self):
+        if not hasattr(self, '_segments'):
+            self._segments = self.displaySet.segments
+        return self._segments
+
+    @property
+    def startTime(self):
+        return self.displaySet.pcsSegment.pts
+
+    @property
+    def startTimems(self):
+        return self.displaySet.pcsSegment.ptsms
+
+    @property
+    def endTime(self):
+        return self._endTime
+    @endTime.setter
+    def endTime(self, endTime):
+        self._endTime = endTime
+
+    @property
+    def endTimems(self):
+        if self.endTime is not None:
+            return self.endTime/90
+        else:
+            return None
+
+    @property
+    def duration(self):
+        if self.endTime is not None:
+            return self.endTime - self.startTime
+        else:
+            return None
+
+    @property
+    def durationms(self):
+        if self.endTimems is not None:
+            return self.endTimems - self.startTimems
+        else:
+            return None
+    
+    @property
+    def maxAlpha(self):
+        return max(self.displaySet.alpha)
+
+    @property
+    def image(self):
+        return self.displaySet.image
+
+    @property
+    def screenImage(self):
+        return self.displaySet.screenImage
+    
+def RLEDecode(rawData):
     lineBuilder = []
     pixels = []
 
     with io.BytesIO(rawData) as _:
         stream = BufferedRandomPlus(io.BufferedRandom(_))
 
-        while stream.peekByte():
+        while stream.offset < len(rawData):
             first = stream.readUChar()
             if first:
                 color = first
@@ -525,27 +711,3 @@ def rleDecode(rawData):
         print(f'Warning: [RLE] Hanging pixels without line ending: {lineBuilder}')
      
     return np.asarray(pixels, dtype=np.uint8)
-
-if __name__ == '__main__':
-    #pr = cProfile.Profile()
-    #pr.enable()
-
-    x = SupReader('Thor2.sup')
-    #x = SupReader('[Nekomoe kissaten&VCB-Studio] Owarimonogatari S2 [01][Ma10p_1080p][x265_2flac].sc.sup')
-    ss = x.segments
-    dss = x.displaySets
-    eps = x.epochs
-    #pprint([[s.data.compositionState for s in ep.segments if s.type == SEGMENT_TYPE.PCS] for ep in eps])
-    #pprint([[s.ptsms for s in ds.segments] for ds in dss])
-    #pprint([[[(w.xPos, w.yPos) for w in s.data.windowObjects] for s in ep.segments if s.type == SEGMENT_TYPE.WDS] for ep in eps])
-    #pprint([[s.data.paletteID for s in ep.segments if s.type == SEGMENT_TYPE.PDS] for ep in eps])
-    #pprint([[(w.xPos, w.yPos) for w in s.data.windowObjects] for s in ss if s.type == SEGMENT_TYPE.WDS])
-    #pprint([[(o.xPos, o.yPos) for o in s.data.compositionObjects] for s in ss if s.type == SEGMENT_TYPE.PCS and s.data.compositionState == COMPOSITION_STATE.EPOCH_START])
-    for i, ds in enumerate(dss):
-        if ds.screenImage:
-            ds.screenImage.save(f'result/{i}.png')
-    #pr.disable()
-    #s = io.StringIO()
-    #ps = pstats.Stats(pr, stream=s)
-    #ps.print_stats()
-    #print(s.getvalue())
