@@ -55,6 +55,9 @@ class BDSupReader:
                     dsObj = DisplaySet(ds)
                     self._displaySets.append(dsObj)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        if subPicture is not None:
+                            subPicture.endTime = dsObj.pcsSegment.pts
+                            self._subPictures.append(subPicture)
                         subPicture = SubPicture(dsObj)
                     else:
                         subPicture.endTime = dsObj.pcsSegment.pts
@@ -72,6 +75,9 @@ class BDSupReader:
                 dsObj = DisplaySet(ds)
                 self._displaySets.appen(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    if subPicture is not None:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
                     subPicture = subPicture(dsObj)
                 else:
                     subPicture.endTime = dsObj.pcsSegment.pts
@@ -104,6 +110,9 @@ class BDSupReader:
                     dsObj = DisplaySet(ds)
                     yield dsObj
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        if subPicture is not None:
+                            subPicture.endTime = dsObj.pcsSegment.pts
+                            self._subPictures.append(subPicture)
                         subPicture = SubPicture(dsObj)
                     else:
                         subPicture.endTime = dsObj.pcsSegment.pts
@@ -121,6 +130,9 @@ class BDSupReader:
                 dsObj = DisplaySet(ds)
                 yield dsObj
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    if subPicture is not None:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
                     subPicture = subPicture(dsObj)
                 else:
                     subPicture.endTime = dsObj.pcsSegment.pts
@@ -151,6 +163,9 @@ class BDSupReader:
                 if segment.type == SEGMENT_TYPE.END:
                     dsObj = DisplaySet(ds)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        if subPicture is not None:
+                            subPicture.endTime = dsObj.pcsSegment.pts
+                            self._subPictures.append(subPicture)
                         subPicture = SubPicture(dsObj)
                     else:
                         subPicture.endTime = dsObj.pcsSegment.pts
@@ -170,6 +185,9 @@ class BDSupReader:
                 dsObj = DisplaySet(ds)
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    if subPicture is not None:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        self._subPictures.append(subPicture)
                     subPicture = subPicture(dsObj)
                 else:
                     subPicture.endTime = dsObj.pcsSegment.pts
@@ -200,6 +218,9 @@ class BDSupReader:
                 if segment.type == SEGMENT_TYPE.END:
                     dsObj = DisplaySet(ds)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                        if subPicture is not None:
+                            subPicture.endTime = dsObj.pcsSegment.pts
+                            yield subPicture
                         subPicture = SubPicture(dsObj)
                     else:
                         subPicture.endTime = dsObj.pcsSegment.pts
@@ -219,6 +240,9 @@ class BDSupReader:
                 dsObj = DisplaySet(ds)
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
+                    if subPicture is not None:
+                        subPicture.endTime = dsObj.pcsSegment.pts
+                        yield subPicture
                     subPicture = subPicture(dsObj)
                 else:
                     subPicture.endTime = dsObj.pcsSegment.pts
