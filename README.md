@@ -6,9 +6,9 @@ This project is still under development, comments and advices are always appreci
 
 ### Features
 * Acquire all the information that the subtitle carries, please refer to [US Patent US 20090185789 A1](https://encrypted.google.com/patents/US20090185789?cl=da) for details;
-* Acquire start and end timestamp for each caption;
+* Acquire the start and end timestamp for each caption;
 * Acquire and save images of each caption;
-* Acquire and save the screen image, which means not only the images themselves, but also their placements, of each caption;
+* Acquire and save the screen image, which means not only the images themselves, but also their placements on the screen, of each caption;
 * Assign weights for each screen image according to their transparency value. (Fade in or out captions have small weights relativley)
 
 ### Known Issues
@@ -16,7 +16,7 @@ This project is still under development, comments and advices are always appreci
 
 ### Future Work
 - [ ] Re-assign timestamps by provding a mapping function, taking index and original timestamp as arguments;
-- [ ] Apply filters on RLE data, which are the subtitle pictures;
+- [ ] Apply filters on RLE data (i.e. the subtitle image);
 - [ ] Convert text format strings to RGBA image;
 - [ ] Encode RGBA image to RLE data;
 - [ ] Convert subrip or ASS/SSA subtitles to pgs subtitles;
