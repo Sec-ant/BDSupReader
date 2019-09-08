@@ -1,6 +1,6 @@
 import io, os, itertools
 import numpy as np
-from enum  import Enum
+from enum import Enum
 from PIL import Image
 from bufferedrandomplus import BufferedRandomPlus
 
