@@ -1,16 +1,26 @@
 # BDSupReader
 ### Intro
-A Blu-Ray PGS subtitle (.sup) parser. Still under development.
+A BluRay PGS subtitle (.sup) parser, which is developed as a helper CLI tool to sync pgs subtitles timewise. More features will be considered when the basic requirements are met.
+
+This project is still under development, comments and advices are always appreciated!
+
+### Features
+* Acquire all the information that the subtitle carries, please refer to [US Patent US 20090185789 A1](https://encrypted.google.com/patents/US20090185789?cl=da) for details;
+* Acquire start and end timestamp for each caption;
+* Acquire and save images of each caption;
+* Acquire and save the screen image, which means not only the images themselves, but also their placements, of each caption;
+* Assign weights for each screen image according to their transparency value. (Fade in or out captions have small weights relativley)
 
 ### Known Issues
 :x: The minimum unit for the resource (i.e. image and palette) should be epoch but not display set.
 
 ### Future Work
-- [ ] Re-assign timestamps by provding a mapping function.
-- [ ] Apply filters on RLE data, which are the subtitle pictures.
-- [ ] Convert text format strings to RGBA image.
-- [ ] Encode RGBA image to RLE data.
-- [ ] Convert subrip or ass/ssa subtitles to pgs subtitles.
+- [ ] Re-assign timestamps by provding a mapping function, taking index and original timestamp as arguments;
+- [ ] Apply filters on RLE data, which are the subtitle pictures;
+- [ ] Convert text format strings to RGBA image;
+- [ ] Encode RGBA image to RLE data;
+- [ ] Convert subrip or ASS/SSA subtitles to pgs subtitles;
+- [ ] OCR. (Maybe not, for this feature is too heavy)
 
 ### Reference
 * [BDSup2Sub](https://github.com/mjuhasz/BDSup2Sub) by @EzraBC
