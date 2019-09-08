@@ -34,16 +34,8 @@ class BDSupReader:
         self.filePath = filePath
         self.bufferSize = bufferSize
         self.verbose = verbose
-
+    
     def iterSegments(self):
-        ds = []
-        ep = []
-        self._displaySets = []
-        self._epochs = []
-        self._subPictures = []
-        subPicture = None
-        dsObj = None
-        prevDsObj = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -52,240 +44,53 @@ class BDSupReader:
             while stream.offset < self._size:
                 segment = Segment(stream)
                 yield segment
-                ds.append(segment)
-                if segment.type == SEGMENT_TYPE.END:
-                    prevDsObj = dsObj
-                    dsObj = DisplaySet(ds)
-                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                        dsObj.prevDS = prevDsObj
-                    self._displaySets.append(dsObj)
-                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                        if subPicture is not None:
-                            subPicture.endTime = dsObj.pcsSegment.pts
-                            self._subPictures.append(subPicture)
-                        subPicture = SubPicture(dsObj)
-                    else:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                        subPicture = None
-                    ep.append(dsObj)
-                    ds = []
-                elif ep \
-                and segment.type == SEGMENT_TYPE.PCS \
-                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
-                    self._epochs.append(Epoch(ep))
-                    ep = []
-            if ds:
-                print('Warning: [Read Stream] The last display set lacks END segment')
-                prevDsObj = dsObj
-                dsObj = DisplaySet(ds)
-                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                    dsObj.prevDS = prevDsObj
-                self._displaySets.appen(dsObj)
-                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                    if subPicture is not None:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                    subPicture = subPicture(dsObj)
-                else:
-                    subPicture.endTime = dsObj.pcsSegment.pts
-                    self._subPictures.append(subPicture)
-                    subPicture = None
-                ep.append(dsObj)
-            if subPicture:
-                print('Warning: [Read Stream] The last sub picture lacks end time')
-                self._subPictures.append(subPicture)
-            self._epochs.append(Epoch(ep))
-                
-    
+
     def iterDisplaySets(self):
         ds = []
-        ep = []
-        self._segments = []
-        self._epochs = []
-        self._subPictures = []
-        subPicture = None
         dsObj = None
         prevDsObj = None
-        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
-            if not hasattr(self, '_size'):
-                self._size = os.fstat(_.fileno()).st_size
-            self._stream = BufferedRandomPlus(_)
-            stream = self._stream
-            while stream.offset < self._size:
-                segment = Segment(stream)
-                self._segments.append(segment)
-                ds.append(segment)
-                if segment.type == SEGMENT_TYPE.END:
-                    prevDsObj = dsObj
-                    dsObj = DisplaySet(ds)
-                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                        dsObj.prevDS = prevDsObj
-                    yield dsObj
-                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                        if subPicture is not None:
-                            subPicture.endTime = dsObj.pcsSegment.pts
-                            self._subPictures.append(subPicture)
-                        subPicture = SubPicture(dsObj)
-                    else:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                        subPicture = None
-                    ep.append(dsObj)
-                    ds = []
-                elif ep \
-                and segment.type == SEGMENT_TYPE.PCS \
-                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
-                    self._epochs.append(Epoch(ep))
-                    ep = []
-            if ds:
-                print('Warning: [Read Stream] The last display set lacks END segment')
+        for segment in self.iterSegments():
+            ds.append(segment)
+            if segment.type == SEGMENT_TYPE.END:
                 prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
                 if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
                     dsObj.prevDS = prevDsObj
                 yield dsObj
-                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                    if subPicture is not None:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                    subPicture = subPicture(dsObj)
-                else:
-                    subPicture.endTime = dsObj.pcsSegment.pts
-                    self._subPictures.append(subPicture)
-                    subPicture = None
-                ep.append(dsObj)
-            if subPicture:
-                print('Warning: [Read Stream] The last sub picture lacks end time')
-                self._subPictures.append(subPicture)
-            self._epochs.append(Epoch(ep))
+                ds = []
+        if ds:
+            print('Warning: [Read Stream] The last display set lacks END segment')
+            prevDsObj = dsObj
+            dsObj = DisplaySet(ds)
+            if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                dsObj.prevDS = prevDsObj
+            yield dsObj
 
     def iterEpochs(self):
-        ds = []
         ep = []
-        self._segments = []
-        self._displaySets = []
-        self._subPictures = []
-        subPicture = None
-        dsObj = None
-        prevDsObj = None
-        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
-            if not hasattr(self, '_size'):
-                self._size = os.fstat(_.fileno()).st_size
-            self._stream = BufferedRandomPlus(_)
-            stream = self._stream
-            while stream.offset < self._size:
-                segment = Segment(stream)
-                self._segments.append(segment)
-                ds.append(segment)
-                if segment.type == SEGMENT_TYPE.END:
-                    prevDsObj = dsObj
-                    dsObj = DisplaySet(ds)
-                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                        dsObj.prevDS = prevDsObj
-                    self._displaySets.append(dsObj)
-                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                        if subPicture is not None:
-                            subPicture.endTime = dsObj.pcsSegment.pts
-                            self._subPictures.append(subPicture)
-                        subPicture = SubPicture(dsObj)
-                    else:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                        subPicture = None
-                    ep.append(dsObj)
-                    ds = []
-                elif ep \
-                and segment.type == SEGMENT_TYPE.PCS \
-                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
-                    yield Epoch(ep)
-                    ep = []
-                    flag = True
-            if ds:
-                print('Warning: [Read Stream] The last display set lacks END segment')
-                prevDsObj = dsObj
-                dsObj = DisplaySet(ds)
-                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                    dsObj.prevDS = prevDsObj
-                self._displaySets.append(dsObj)
-                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                    if subPicture is not None:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        self._subPictures.append(subPicture)
-                    subPicture = subPicture(dsObj)
-                else:
-                    subPicture.endTime = dsObj.pcsSegment.pts
-                    self._subPictures.append(subPicture)
-                    subPicture = None
-                ep.append(dsObj)
-            if subPicture:
-                print('Warning: [Read Stream] The last sub picture lacks end time')
-                self._subPictures.append(subPicture)
-            yield Epoch(ep)
+        for displaySet in self.iterDisplaySets():
+            if ep and displaySet.pcsSegment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
+                yield Epoch(ep)
+                ep = []
+            ep.append(displaySet)
+        yield Epoch(ep)
 
     def iterSubPictures(self):
-        ds = []
-        ep = []
-        self._segments = []
-        self._displaySets = []
-        self._epochs = []
         subPicture = None
-        dsObj = None
-        prevDsObj = None
-        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
-            if not hasattr(self, '_size'):
-                self._size = os.fstat(_.fileno()).st_size
-            self._stream = BufferedRandomPlus(_)
-            stream = self._stream
-            while stream.offset < self._size:
-                segment = Segment(stream)
-                self._segments.append(segment)
-                ds.append(segment)
-                if segment.type == SEGMENT_TYPE.END:
-                    prevDsObj = dsObj
-                    dsObj = DisplaySet(ds)
-                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                        dsObj.prevDS = prevDsObj
-                    self._displaySets.append(dsObj)
-                    if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                        if subPicture is not None:
-                            subPicture.endTime = dsObj.pcsSegment.pts
-                            yield subPicture
-                        subPicture = SubPicture(dsObj)
-                    else:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        yield subPicture
-                        subPicture = None
-                    ep.append(dsObj)
-                    ds = []
-                elif ep \
-                and segment.type == SEGMENT_TYPE.PCS \
-                and segment.data.compositionState == COMPOSITION_STATE.EPOCH_START:
-                    self.epochs.append(Epoch(ep))
-                    ep = []
-                    flag = True
-            if ds:
-                print('Warning: [Read Stream] The last display set lacks END segment')
-                prevDsObj = dsObj
-                dsObj = DisplaySet(ds)
-                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                    dsObj.prevDS = prevDsObj
-                self._displaySets.append(dsObj)
-                if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
-                    if subPicture is not None:
-                        subPicture.endTime = dsObj.pcsSegment.pts
-                        yield subPicture
-                    subPicture = subPicture(dsObj)
-                else:
-                    subPicture.endTime = dsObj.pcsSegment.pts
+        for displaySet in self.iterDisplaySets():
+            if displaySet.pcsSegment.data.numberOfCompositionObjects > 0:
+                if subPicture is not None:
+                    subPicture.endTime = displaySet.pcsSegment.pts
                     yield subPicture
-                    subPicture = None
-                ep.append(dsObj)
-            if subPicture:
-                print('Warning: [Read Stream] The last sub picture lacks end time')
+                subPicture = SubPicture(displaySet)
+            else:
+                subPicture.endTime = displaySet.pcsSegment.pts
                 yield subPicture
-            self._epochs.append(Epoch(ep))
-        
+                subPicture = None
+        if subPicture:
+            print('Warning: [Read Stream] The last sub picture lacks end time')
+            yield subPicture
+
     @property
     def segments(self):
         if not hasattr(self, '_segments'):
