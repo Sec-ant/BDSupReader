@@ -739,7 +739,7 @@ class SubPicture:
         return self.displaySet.screenImage
 
 def ms2Str(ms):
-    return hmsx2Str(*ms2hmsx(ms))
+    return hmsx2Str(*ms2hmsxInt(ms))
 
 def hmsx2Str(h, m, s, x):
     return '{:02.0f}:{:02.0f}:{:02.0f}.{:03.0f}'.format(h, m, s, x)
@@ -750,6 +750,9 @@ def ms2hmsx(ms):
     m = (ms // 60000) % 60
     h = ms // 3600000
     return h, m ,s, x
+
+def ms2hmsxInt(ms):
+    return ms2hmsx(round(ms))
 
 def RLEDecode(rawData):
     lineBuilder = []
