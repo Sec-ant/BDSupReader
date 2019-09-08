@@ -42,6 +42,8 @@ class BDSupReader:
         self._epochs = []
         self._subPictures = []
         subPicture = None
+        dsObj = None
+        prevDsObj = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -52,7 +54,10 @@ class BDSupReader:
                 yield segment
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
+                    prevDsObj = dsObj
                     dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                        dsObj.prevDS = prevDsObj
                     self._displaySets.append(dsObj)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                         if subPicture is not None:
@@ -72,7 +77,10 @@ class BDSupReader:
                     ep = []
             if ds:
                 print('Warning: [Read Stream] The last display set lacks END segment')
+                prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                    dsObj.prevDS = prevDsObj
                 self._displaySets.appen(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                     if subPicture is not None:
@@ -97,6 +105,8 @@ class BDSupReader:
         self._epochs = []
         self._subPictures = []
         subPicture = None
+        dsObj = None
+        prevDsObj = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -107,7 +117,10 @@ class BDSupReader:
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
+                    prevDsObj = dsObj
                     dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                        dsObj.prevDS = prevDsObj
                     yield dsObj
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                         if subPicture is not None:
@@ -127,7 +140,10 @@ class BDSupReader:
                     ep = []
             if ds:
                 print('Warning: [Read Stream] The last display set lacks END segment')
+                prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                    dsObj.prevDS = prevDsObj
                 yield dsObj
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                     if subPicture is not None:
@@ -151,6 +167,8 @@ class BDSupReader:
         self._displaySets = []
         self._subPictures = []
         subPicture = None
+        dsObj = None
+        prevDsObj = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -161,7 +179,11 @@ class BDSupReader:
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
+                    prevDsObj = dsObj
                     dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                        dsObj.prevDS = prevDsObj
+                    self._displaySets.append(dsObj)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                         if subPicture is not None:
                             subPicture.endTime = dsObj.pcsSegment.pts
@@ -172,7 +194,6 @@ class BDSupReader:
                         self._subPictures.append(subPicture)
                         subPicture = None
                     ep.append(dsObj)
-                    self._displaySets.append(dsObj)
                     ds = []
                 elif ep \
                 and segment.type == SEGMENT_TYPE.PCS \
@@ -182,7 +203,10 @@ class BDSupReader:
                     flag = True
             if ds:
                 print('Warning: [Read Stream] The last display set lacks END segment')
+                prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                    dsObj.prevDS = prevDsObj
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                     if subPicture is not None:
@@ -206,6 +230,8 @@ class BDSupReader:
         self._displaySets = []
         self._epochs = []
         subPicture = None
+        dsObj = None
+        prevDsObj = None
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -216,7 +242,11 @@ class BDSupReader:
                 self._segments.append(segment)
                 ds.append(segment)
                 if segment.type == SEGMENT_TYPE.END:
+                    prevDsObj = dsObj
                     dsObj = DisplaySet(ds)
+                    if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                        dsObj.prevDS = prevDsObj
+                    self._displaySets.append(dsObj)
                     if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                         if subPicture is not None:
                             subPicture.endTime = dsObj.pcsSegment.pts
@@ -227,7 +257,6 @@ class BDSupReader:
                         yield subPicture
                         subPicture = None
                     ep.append(dsObj)
-                    self._displaySets.append(dsObj)
                     ds = []
                 elif ep \
                 and segment.type == SEGMENT_TYPE.PCS \
@@ -237,7 +266,10 @@ class BDSupReader:
                     flag = True
             if ds:
                 print('Warning: [Read Stream] The last display set lacks END segment')
+                prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
+                    dsObj.prevDS = prevDsObj
                 self._displaySets.append(dsObj)
                 if dsObj.pcsSegment.data.numberOfCompositionObjects > 0:
                     if subPicture is not None:
@@ -516,6 +548,14 @@ class DisplaySet:
 
     def __init__(self, segments):
         self.segments = segments
+        self._prevDS = None
+    
+    @property
+    def prevDS(self):
+        return self._prevDS
+    @prevDS.setter
+    def prevDS(self, prevDS):
+        self._prevDS = prevDS
 
     @property
     def pcsSegment(self):
@@ -544,11 +584,16 @@ class DisplaySet:
                 seed += data.imgData
             # One display set may have more than one objects, they have different object IDs
             # The number of objects is also indicated at PCS segment's number of composition objects field
-            if prevID == -1:
-                self._RLE = []
-            else:
+            if prevID != -1:
                 RLE.append({'id': prevID, 'data': seed})
-                self._RLE = RLE
+            
+            if self.prevDS is not None:
+                prevRLE = self.prevDS.RLE
+                ids = [r['id'] for r in RLE]
+                RLE.extend(r for r in prevRLE if r['id'] not in ids)
+            
+            self._RLE = sorted(RLE, key = lambda k: k['id'])
+
         return self._RLE
 
     @property
@@ -568,6 +613,8 @@ class DisplaySet:
         if not hasattr(self, '_pds'):
             self._pds = next((p.data for p in self.getType(SEGMENT_TYPE.PDS)
                 if p.data.paletteID == self.getType(SEGMENT_TYPE.PCS)[0].data.paletteID), None)
+            if self._pds is None and self.prevDS is not None:
+                self._pds = self.prevDS.pds
         return self._pds
     
     @property
