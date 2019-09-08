@@ -11,8 +11,6 @@ This project is still under development, comments and advices are always appreci
 * Acquire and save the screen image, which means not only the images themselves, but also their placements on the screen, of each caption;
 * Assign weights for each screen image according to their transparency value. (Fade in or out captions have small weights relativley)
 
-### Known Issues
-
 ### Future Work
 - [ ] Re-assign timestamps by provding a mapping function, taking index and original timestamp as arguments;
 - [ ] Apply filters on RLE data (i.e. the subtitle image);
@@ -20,6 +18,9 @@ This project is still under development, comments and advices are always appreci
 - [ ] Encode RGBA image to RLE data;
 - [ ] Convert subrip or ASS/SSA subtitles to pgs subtitles;
 - [ ] OCR. (Maybe not, for this feature is too heavy)
+
+### Known Issues
+Please refer to the [Open Issues Page](https://github.com/Sec-ant/BDSupReader/issues?q=is%3Aopen).
 
 ### Reference
 * [BDSup2Sub](https://github.com/mjuhasz/BDSup2Sub) by @EzraBC
