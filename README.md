@@ -12,7 +12,6 @@ This project is still under development, comments and advices are always appreci
 * Assign weights for each screen image according to their transparency value. (Fade in or out captions have small weights relativley)
 
 ### Known Issues
-:x: The minimum unit for the resource (i.e. image and palette) should be epoch but not display set.
 
 ### Future Work
 - [ ] Re-assign timestamps by provding a mapping function, taking index and original timestamp as arguments;
