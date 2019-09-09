@@ -88,9 +88,10 @@ class BDSupReader:
                     yield subPicture
                 subPicture = SubPicture(displaySet)
             else:
-                subPicture.endTime = displaySet.pcsSegment.pts
-                yield subPicture
-                subPicture = None
+                if subPicture is not None:
+                    subPicture.endTime = displaySet.pcsSegment.pts
+                    yield subPicture
+                    subPicture = None
         if subPicture:
             print('Warning: [Read Stream] The last sub picture lacks end time')
             yield subPicture
