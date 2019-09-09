@@ -1,7 +1,7 @@
 # BDSupReader
 Original File | Screen Images (converted to APNG)
 ------------- | ---------------------------------
-[**./TestSupSet/test_04.sup**](https://github.com/Sec-ant/BDSupReader/blob/master/TestSupSet/test_04.sup?raw=true) | ![Screen Image Example.png](https://github.com/Sec-ant/BDSupReader/blob/master/Screen%20Image%20Example.png?raw=true) |
+[:clapper:](https://github.com/Sec-ant/BDSupReader/blob/master/TestSupSet/test_04.sup?raw=true) | <a target="_blank" rel="noopener noreferrer" href="https://github.com/Sec-ant/BDSupReader/blob/master/Screen%20Image%20Example.png?raw=true"><img src="https://github.com/Sec-ant/BDSupReader/raw/master/Screen%20Image%20Example.png?raw=true" alt="Screen Image Example.png" width="50%"></a> |
 
 ## Intro
 A BluRay PGS subtitle (.sup) parser, which is developed as a helper CLI tool to sync pgs subtitles timewise. More features will be considered when the basic requirements are met.
