@@ -34,8 +34,10 @@ class BDSupReader:
         self.filePath = filePath
         self.bufferSize = bufferSize
         self.verbose = verbose
+        self._segments = None
     
     def iterSegments(self):
+        segments = []
         with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
             if not hasattr(self, '_size'):
                 self._size = os.fstat(_.fileno()).st_size
@@ -43,13 +45,15 @@ class BDSupReader:
             stream = self._stream
             while stream.offset < self._size:
                 segment = Segment(stream)
+                segments.append(segment)
                 yield segment
+        self._segments = segments
 
     def iterDisplaySets(self):
         ds = []
         dsObj = None
         prevDsObj = None
-        for segment in self.iterSegments():
+        for segment in (self._segments or self.iterSegments()):
             ds.append(segment)
             if segment.type == SEGMENT_TYPE.END:
                 prevDsObj = dsObj
@@ -93,27 +97,21 @@ class BDSupReader:
 
     @property
     def segments(self):
-        if not hasattr(self, '_segments'):
-            self._segments = list(self.iterSegments())
+        if self._segments is None:
+            return list(self.iterSegments())
         return self._segments
 
     @property
     def displaySets(self):
-        if not hasattr(self, '_displaySets'):
-            self._displaySets = list(self.iterDisplaySets())
-        return self._displaySets
+        return list(self.iterDisplaySets())
 
     @property
     def epochs(self):
-        if not hasattr(self, '_epochs'):
-            self._epochs = list(self.iterEpochs())
-        return self._epochs
+        return list(self.iterEpochs())
 
     @property
     def subPictures(self):
-        if not hasattr(self, '_subPictures'):
-            self._subPictures = list(self.iterSubPictures())
-        return self._subPictures
+        return list(self.iterSubPictures())
 
 class PresentationCompositionSegment:
     
