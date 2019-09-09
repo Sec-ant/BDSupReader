@@ -98,7 +98,7 @@ class BDSupReader:
     @property
     def segments(self):
         if self._segments is None:
-            return list(self.iterSegments())
+            self._segments = list(self.iterSegments())
         return self._segments
 
     @property
