@@ -122,7 +122,7 @@ class PresentationCompositionSegment:
             self._parent = parent
             self.objectID = stream.readUShort()
             self.windowID = stream.readUChar()
-            self.cropped = bytes([stream.readByte()[0] & b'\x40'[0]]) == b'\x40'
+            self.croppedFlag = stream.readByte()
             self.xPos = stream.readUShort()
             self.yPos = stream.readUShort()
             if self.cropped:
@@ -137,6 +137,30 @@ class PresentationCompositionSegment:
                 self.cropHeight = None
 
         @property
+        def raw(self):
+            result = self.objectID.to_bytes(2, byteorder = 'big') + \
+                    bytes([self.windowID]) + \
+                    self.croppedFlag + \
+                    self.xPos.to_bytes(2, byteorder = 'big') + \
+                    self.yPos.to_bytes(2, byteorder = 'big')
+            if self.cropped:
+                result += self.cropXPos.to_bytes(2, byteorder = 'big') + \
+                        self.cropYPos.to_bytes(2, byteorder = 'big') + \
+                        self.cropWidth.to_bytes(2, byteorder = 'big') + \
+                        self.cropHeight.to_bytes(2, byteorder = 'big')
+            return result
+
+        @property
+        def cropped(self):
+            return self.croppedFlag[0] & 64 == 64
+        @cropped.setter
+        def cropped(self, value):
+            if value:
+                self.croppedFlag = bytes([self.croppedFlag[0] | 64])
+            else:
+                self.croppedFlag = bytes([self.croppedFlag[0] & 191])
+
+        @property
         def parent(self):
             return self._parent
 
@@ -147,11 +171,11 @@ class PresentationCompositionSegment:
         self.frameRate = stream.readByte()
         self.compositionNumber = stream.readUShort()
         self.compositionState = COMPOSITION_STATE(stream.readByte())
-        self.paletteUpdate = bytes([stream.readByte()[0] & b'\x80'[0]]) == b'\x80'
+        self.paletteUpdateFlag = stream.readByte()
         self.paletteID = stream.readUChar()
         self.numberOfCompositionObjects = stream.readUChar()
         self.compositionObjects = self.getCompositionObjects(stream)
-        
+
     def getCompositionObjects(self, stream):
         comps = []
         stop = stream.offset + len(self.parent) - 11
@@ -165,6 +189,28 @@ class PresentationCompositionSegment:
                     .format(self.numberOfCompositionObjects, numberOfCompositionObjects))
             self.numberOfCompositionObjects = numberOfCompositionObjects
         return comps
+    
+    @property
+    def raw(self):
+        result = self.width.to_bytes(2, byteorder = 'big') + \
+                self.height.to_bytes(2, byteorder = 'big') + \
+                self.frameRate + \
+                self.compositionNumber.to_bytes(2, byteorder = 'big') + \
+                self.compositionState.value + \
+                self.paletteUpdateFlag + \
+                bytes([self.paletteID, self.numberOfCompositionObjects]) + \
+                b''.join(o.raw for o in self.compositionObjects)
+        return result
+
+    @property
+    def paletteUpdate(self):
+        return self.paletteUpdateFlag[0] & 128 == 128
+    @paletteUpdate.setter
+    def paletteUpdate(self, value):
+        if value:
+            self.paletteUpdateFlag = bytes([self.paletteUpdateFlag[0] | 128])
+        else:
+            self.paletteUpdateFlag = bytes([self.paletteUpdateFlag[0] & 127])
 
     @property
     def parent(self):
@@ -186,6 +232,15 @@ class WindowDefinitionSegment:
         def parent(self):
             return self._parent
 
+        @property
+        def raw(self):
+            result = bytes([self.windowID]) + \
+                    self.xPos.to_bytes(2, byteorder = 'big') + \
+                    self.yPos.to_bytes(2, byteorder = 'big') + \
+                    self.width.to_bytes(2, byteorder = 'big') + \
+                    self.height.to_bytes(2, byteorder = 'big')
+            return result
+
     def __init__(self, stream, parent):
         self._parent = parent
         self.numberOfWindows = stream.readUChar()
@@ -204,6 +259,12 @@ class WindowDefinitionSegment:
                     .format(self.numberOfWindows, numberOfWindows))
             self.numberOfWindows = numberOfWindows
         return windows
+    
+    @property
+    def raw(self):
+        result = bytes([self.numberOfWindows]) + \
+                b''.join(o.raw for o in self.windowObjects)
+        return result
 
     @property
     def parent(self):
@@ -212,7 +273,7 @@ class WindowDefinitionSegment:
 class PaletteDefinitionSegment:
 
     xForm = np.array([[255/219, 255/224*1.402, 0],
-        [255/219, -255/224*1/402*0.299/0.587, -255/224*1.772*0.114/0.587], 
+        [255/219, -255/224*1.402*0.299/0.587, -255/224*1.772*0.114/0.587], 
         [255/219, 0, 255/224*1.772]], dtype = np.float)
     
     def __init__(self, stream, parent):
@@ -238,26 +299,42 @@ class PaletteDefinitionSegment:
         np.putmask(RGB, RGB > 255, 255)
         np.putmask(RGB, RGB < 0, 0)
         return np.uint8(RGB)
+    
+    def RGB2YCrCb(self, RGB):
+        YCrCb = np.asarray(RGB, dtype = np.float)
+        YCrCb = np.linalg.solve(self.xForm.T, YCrCb)
+        YCrCb += [16, 128, 128]
+        np.putmask(YCrCb, YCrCb < 16, 16)
+        np.putmask(YCrCb[:, 0], YCrCb[:, 0] > 235, 235)
+        np.putmask(YCrCb[:, 1:3], YCrCb[:, 1:3] > 240, 240)
+        return np.uint8(YCrCb)
+
+    @property
+    def raw(self):
+        result = bytes([self.paletteID, self.version]) + \
+                self.palette.tobytes()
+        return result
 
     @property
     def YCrCb(self):
-        if not hasattr(self, '_YCrCb'):
-            self._YCrCb = self.palette[:, 0:3]
-            self._alpha = self.palette[:, 3]
-        return self._YCrCb
+        return self.palette[:, 0:3]
+    @YCrCb.setter
+    def YCrCb(self, value):
+        self.palette[:, 0:3] = value 
 
     @property
     def alpha(self):
-        if not hasattr(self, '_alpha'):
-            self._YCrCb = self.palette[:, 0:3]
-            self._alpha = self.palette[:, 3]
-        return self._alpha
+        return self.palette[:, 3]
+    @alpha.setter
+    def alpha(self, value):
+        self.palette[:, 3] = value
 
     @property
     def RGB(self):
-        if not hasattr(self, '_RGB'):
-            self._RGB = self.YCrCb2RGB(self.YCrCb)
-        return self._RGB
+        return self.YCrCb2RGB(self.YCrCb)
+    @RGB.setter
+    def RGB(self, value):
+        self.YCrCb = self.RGB2YCrCb(value)
 
     @property
     def parent(self):
@@ -272,7 +349,7 @@ class ObjectDefinitionSegment:
         self.sequence = stream.readByte()
         
         # First Fragment: has data Length, width and height fields
-        if self.isFirst:
+        if self.first:
             self.dataLength = int.from_bytes(stream.readBytes(3), byteorder = 'big')
             self.width = stream.readUShort()
             self.height = stream.readUShort()
@@ -290,29 +367,57 @@ class ObjectDefinitionSegment:
             self.imgData = stream.readBytes(dataLength)
         
         # Single Fragment Correction
-        if self.isFirst and self.isLast and dataLength != self.dataLength:
+        if self.first and self.last and dataLength != self.dataLength:
             print('Warning: [ODS] Length of image data asserted ({:d}) '
                     'does not match the amount found ({:d}). '
                     'The attribute will be reassigned'
                     .format(self.dataLength, dataLength))
             self.dataLength = dataLength
+    
+    @property
+    def raw(self):
+        result = self.objectID.to_bytes(2, byteorder = 'big') + \
+                bytes([self.version]) + \
+                self.sequence
+        if self.first:
+            result += self.dataLength.to_bytes(3, byteorder = 'big') + \
+                    self.width.to_bytes(2, byteorder = 'big') + \
+                    self.height.to_bytes(2, byteorder = 'big')
+        result += self.imgData
+        return result
 
     @property
     def parent(self):
         return self._parent
     
     @property
-    def isFirst(self):
-        return bytes([self.sequence[0] & b'\x80'[0]]) == b'\x80'
-    
+    def first(self):
+        return self.sequence[0] & 128 == 128
+    @first.setter
+    def first(self, value):
+        if value:
+            self.sequence = bytes([self.sequence[0] | 128])
+        else:
+            self.sequence = bytes([self.sequence[0] & 127])
+
     @property
-    def isLast(self):
-        return bytes([self.sequence[0] & b'\x40'[0]]) == b'\x40'
+    def last(self):
+        return self.sequence[0] & 64 == 64
+    @last.setter
+    def last(self, value):
+        if value:
+            self.sequence = bytes([self.sequence[0] | 64])
+        else:
+            self.sequence = bytes([self.sequence[0] & 191]) 
 
 class EndSegment:
     
     def __init__(self, stream, parent):
         self._parent = parent
+
+    @property
+    def raw(self):
+        return b''
 
     @property
     def parent(self):
@@ -341,12 +446,35 @@ class Segment:
         return self.size
 
     @property
+    def raw(self):
+        result = self.pts.to_bytes(4, byteorder = 'big') + \
+                self.dts.to_bytes(4, byteorder = 'big') + \
+                self.type.value + \
+                self.size.to_bytes(2, byteorder = 'big') +\
+                self.data.raw
+        return result
+
+    @property
     def ptsms(self):
-        return self.pts/90
+        return self.pts / 90
+    @ptsms.setter
+    def ptsms(self, value):
+        pts = round(value * 90)
+        if pts > 4294967295:
+            print('Warning: [Set PTS] Time is larger than 4 bytes, 2^32 - 1 is used')
+            pts = 4294967295
+        self.pts = pts
 
     @property
     def dtsms(self):
-        return self.dts/90
+        return self.dts / 90
+    @dtsms.setter
+    def dtsms(self, value):
+        dts = round(value * 90)
+        if dts > 4294967295:
+            print('Warning: [Set DTS] Time is larger than 4 bytes, 2^32 - 1 is used')
+            dts = 4294967295
+        self.dts = dts
 
 class DisplaySet:
 
@@ -355,11 +483,15 @@ class DisplaySet:
         self._prevDS = None
     
     @property
+    def raw(self):
+        return b''.join(s.raw for s in self.segments)
+
+    @property
     def prevDS(self):
         return self._prevDS
     @prevDS.setter
-    def prevDS(self, prevDS):
-        self._prevDS = prevDS
+    def prevDS(self, value):
+        self._prevDS = value
 
     @property
     def pcsSegment(self):
@@ -484,6 +616,10 @@ class Epoch:
         self.displaySets = displaySets
     
     @property
+    def raw(self):
+        return b''.join(ds.raw for ds in self.displaySets)
+
+    @property
     def segments(self):
         if not hasattr(self, '_segments'):
             self._segments = list(itertools.chain(*[ds.segments for ds in self.displaySets]))
@@ -494,6 +630,10 @@ class SubPicture:
     def __init__(self, displaySet):
         self.displaySet = displaySet
         self._endTime = None
+
+    @property
+    def raw(self):
+        return self.displaySet.raw
 
     @property
     def segments(self):
@@ -521,8 +661,8 @@ class SubPicture:
     def endTime(self):
         return self._endTime
     @endTime.setter
-    def endTime(self, endTime):
-        self._endTime = endTime
+    def endTime(self, value):
+        self._endTime = value
 
     @property
     def endTimems(self):
@@ -605,20 +745,20 @@ def ms2hmsx(ms):
 def ms2hmsxInt(ms):
     return ms2hmsx(round(ms))
 
-def RLEDecode(rawData):
+def RLEDecode(RLEData):
     lineBuilder = []
     pixels = []
     offset = 0
-    length = len(rawData)
+    length = len(RLEData)
 
     while offset < length:
-        first = rawData[offset]
+        first = RLEData[offset]
         if first:
             entry = first
             repeat = 1
             skip = 1
         else:
-            second = rawData[offset + 1]
+            second = RLEData[offset + 1]
             if second == 0:
                 entry = 0
                 repeat = 0
@@ -631,15 +771,15 @@ def RLEDecode(rawData):
                 skip = 2
             elif second < 128:
                 entry = 0
-                repeat = ((second - 64) << 8) + rawData[offset + 2]
+                repeat = ((second - 64) << 8) + RLEData[offset + 2]
                 skip = 3
             elif second < 192:
-                entry = rawData[offset + 2]
+                entry = RLEData[offset + 2]
                 repeat = second - 128
                 skip = 3
             else:
-                entry = rawData[offset + 3]
-                repeat = ((second - 192) << 8) + rawData[offset + 2]
+                entry = RLEData[offset + 3]
+                repeat = ((second - 192) << 8) + RLEData[offset + 2]
                 skip = 4
         lineBuilder.extend([entry] * repeat)
         offset += skip
