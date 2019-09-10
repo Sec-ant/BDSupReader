@@ -35,43 +35,45 @@ class BDSupReader:
         self.bufferSize = bufferSize
         self.verbose = verbose
         self._segments = None
-    
+
     def iterSegments(self):
-        segments = []
-        with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
-            if not hasattr(self, '_size'):
-                self._size = os.fstat(_.fileno()).st_size
-            self._stream = BufferedRandomPlus(_)
-            stream = self._stream
-            while stream.offset < self._size:
-                segment = Segment(stream)
-                segments.append(segment)
+        if self._segments is None:
+            segments = []
+            with open(self.filePath, 'r+b', buffering = self.bufferSize) as _:
+                if not hasattr(self, '_size'):
+                    self._size = os.fstat(_.fileno()).st_size
+                self._stream = BufferedRandomPlus(_)
+                stream = self._stream
+                while stream.offset < self._size:
+                    segment = Segment(stream)
+                    segments.append(segment)
+                    yield segment
+            self._segments = segments
+        else:
+            for segment in self._segments:
                 yield segment
-        self._segments = segments
 
     def iterDisplaySets(self):
         ds = []
         dsObj = None
         prevDsObj = None
-        for segment in (self._segments or self.iterSegments()):
+        for segment in self.iterSegments():
             ds.append(segment)
             if segment.type == SEGMENT_TYPE.END:
                 prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                dsObj.prev = prevDsObj
                 if prevDsObj is not None:
-                    prevDsObj.nextDS = dsObj
-                if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                    dsObj.prevDS = prevDsObj
+                    prevDsObj.next = dsObj
                 yield dsObj
                 ds = []
         if ds:
             print('Warning: [Read Stream] The last display set lacks END segment')
             prevDsObj = dsObj
             dsObj = DisplaySet(ds)
+            dsObj.prev = prevDsObj
             if prevDsObj is not None:
-                prevDsObj.nextDS = dsObj
-            if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
-                dsObj.prevDS = prevDsObj
+                prevDsObj.next = dsObj
             yield dsObj
 
     def iterEpochs(self):
@@ -101,7 +103,7 @@ class BDSupReader:
     @property
     def segments(self):
         if self._segments is None:
-            self._segments = list(self.iterSegments())
+            return list(self.iterSegments())
         return self._segments
 
     @property
@@ -115,6 +117,48 @@ class BDSupReader:
     @property
     def subPictures(self):
         return list(self.iterSubPictures())
+    
+    def shift(self, value):
+        for segment in self.segments:
+            segment.pts += value
+            segment.dts += value
+        return self
+
+    def shiftms(self, value):
+        for segment in self.segments:
+            segment.ptsms += value
+            segment.dtsms += value
+        return self
+
+    def scale(self, value):
+        for segment in self.segments:
+            segment.pts *= value
+            segment.dts *= value
+        return self
+
+    def transform(self, function):
+        for ind, segment in enumerate(self.segments):
+            segment.pts = function(ind, segment.pts)
+            segment.dts = function(ind, segment.dts)
+        return self
+
+    def transformms(self, function):
+        for ind, segment in enumerate(self.segments):
+            segment.ptsms = function(ind, segment.ptsms)
+            segment.dtsms = function(ind, segment.dtsms)
+        return self
+
+    def poly(self, coef):
+        for segment in self.segments:
+            segment.pts = np.polyval(coef, segment.pts)
+            segment.dts = np.polyval(coef, segment.dts)
+        return self
+
+    def polyms(self, coef):
+        for segment in self.segments:
+            segment.ptsms = np.polyval(coef, segment.ptsms)
+            segment.dtsms = np.polyval(coef, segment.dtsms)
+        return self
 
 class PresentationCompositionSegment:
     
@@ -521,8 +565,8 @@ class DisplaySet:
 
     def __init__(self, segments):
         self.segments = segments
-        self.prevDS = None
-        self.nextDS = self
+        self.prev = self
+        self.next = self
 
     @property
     def raw(self):
@@ -558,8 +602,8 @@ class DisplaySet:
             if prevID != -1:
                 RLE.append({'id': prevID, 'data': seed})
             
-            if self.prevDS is not None:
-                prevRLE = self.prevDS.RLE
+            if self.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL and self.prev is not self:
+                prevRLE = self.prev.RLE
                 ids = [r['id'] for r in RLE]
                 RLE.extend(r for r in prevRLE if r['id'] not in ids)
             
@@ -584,8 +628,8 @@ class DisplaySet:
         if not hasattr(self, '_pds'):
             self._pds = next((p.data for p in self.getType(SEGMENT_TYPE.PDS)
                 if p.data.paletteID == self.getType(SEGMENT_TYPE.PCS)[0].data.paletteID), None)
-            if self._pds is None and self.prevDS is not None:
-                self._pds = self.prevDS.pds
+            if self._pds is None and self.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL and self.prev is not self:
+                self._pds = self.prev.pds
         return self._pds
     
     @property
@@ -703,22 +747,25 @@ class SubPicture:
     @property
     def startTimeStr(self):
         return ms2Str(self.startTimems)
+    @startTimeStr.setter
+    def startTimeStr(self, value):
+        self.startTimems = str2ms(value)
 
     @property
     def endTime(self):
-        return self.displaySet.nextDS.pcsSegment.pts
+        return self.displaySet.next.pcsSegment.pts
     @endTime.setter
     def endTime(self, value):
-        for s in self.displaySet.nextDS.segments:
+        for s in self.displaySet.next.segments:
             s.pts = value
             s.dts = 0
 
     @property
     def endTimems(self):
-        return self.displaySet.nextDS.pcsSegment.ptsms
+        return self.displaySet.next.pcsSegment.ptsms
     @endTimems.setter
     def endTimems(self, value):
-        for s in self.displaySet.nextDS.segments:
+        for s in self.displaySet.next.segments:
             s.ptsms = value
             s.dts = 0
 
@@ -732,6 +779,9 @@ class SubPicture:
     @property
     def endTimeStr(self):
         return ms2Str(self.endTimems)
+    @endTimeStr.setter
+    def endTimeStr(self, value):
+        self.endTimems = str2ms(value)
 
     @property
     def duration(self):
@@ -757,6 +807,9 @@ class SubPicture:
     @property
     def durationStr(self):
         return ms2Str(self.durationms)
+    @durationStr.setter
+    def durationStr(self, value):
+        self.durationms = str2ms(value)
 
     @property
     def maxAlpha(self):
@@ -773,8 +826,14 @@ class SubPicture:
 def ms2Str(ms):
     return hmsx2Str(*ms2hmsxInt(ms))
 
+def str2ms(string):
+    return hmsx2ms(*str2hmsx(string))
+
 def hmsx2Str(h, m, s, x):
     return '{:02.0f}:{:02.0f}:{:02.0f}.{:03.0f}'.format(h, m, s, x)
+
+def str2hmsx(string):
+    return tuple(float(n) for n in string.replace(',', ':').replace('.', ':').split(':'))
 
 def ms2hmsx(ms):
     x = ms % 1000
