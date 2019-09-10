@@ -58,6 +58,8 @@ class BDSupReader:
             if segment.type == SEGMENT_TYPE.END:
                 prevDsObj = dsObj
                 dsObj = DisplaySet(ds)
+                if prevDsObj is not None:
+                    prevDsObj.nextDS = dsObj
                 if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
                     dsObj.prevDS = prevDsObj
                 yield dsObj
@@ -66,6 +68,8 @@ class BDSupReader:
             print('Warning: [Read Stream] The last display set lacks END segment')
             prevDsObj = dsObj
             dsObj = DisplaySet(ds)
+            if prevDsObj is not None:
+                prevDsObj.nextDS = dsObj
             if dsObj.pcsSegment.data.compositionState == COMPOSITION_STATE.NORMAL:
                 dsObj.prevDS = prevDsObj
             yield dsObj
@@ -84,12 +88,10 @@ class BDSupReader:
         for displaySet in self.iterDisplaySets():
             if displaySet.pcsSegment.data.numberOfCompositionObjects > 0:
                 if subPicture is not None:
-                    subPicture.endTime = displaySet.pcsSegment.pts
                     yield subPicture
                 subPicture = SubPicture(displaySet)
             else:
                 if subPicture is not None:
-                    subPicture.endTime = displaySet.pcsSegment.pts
                     yield subPicture
                     subPicture = None
         if subPicture:
@@ -280,17 +282,24 @@ class PaletteDefinitionSegment:
         self._parent = parent
         self.paletteID = stream.readUChar()
         self.version = stream.readUChar()
-        self.palette = self.getPalette(stream)
+        self.paletteTable = np.asarray(list(stream.readBytes(len(self.parent) - 2)), dtype = np.uint8).reshape((-1, 5))
 
-    def getPalette(self, stream):
+    @property
+    def palette(self):
         # (Y, Cr, Cb) = (235, 128, 128) is white
-        palette = np.array([[235, 128, 128, 0]], dtype = np.uint8).repeat(256, axis = 0)
-        stop = stream.offset + len(self.parent) - 2
-        length = stop - stream.offset
-        table = stream.readBytes(length)
-        for i in range(0, length, 5):
-            palette[table[i]] = [table[i + 1], table[i + 2], table[i + 3], table[i + 4]]
-        return palette
+        p = np.array([[235, 128, 128, 0]], dtype = np.uint8).repeat(256, axis = 0)
+        for row in self.paletteTable:
+            p[row[0]] = row[1:]
+        return p
+    @palette.setter
+    def palette(self, value):
+        for entry, p in enumerate(value):
+            rowIndices = np.where(self.paletteTable[:, 0] == entry)
+            count = len(rowIndices[0])
+            if count:
+                self.paletteTable[rowIndices, 1:] = p
+            else:
+                self.paletteTable = np.vstack((self.paletteTable, [entry, *p]))
 
     def YCrCb2RGB(self, YCrCb):
         RGB = np.asarray(YCrCb, dtype = np.float)
@@ -312,22 +321,34 @@ class PaletteDefinitionSegment:
     @property
     def raw(self):
         result = bytes([self.paletteID, self.version]) + \
-                self.palette.tobytes()
+                self.paletteTable.tobytes()
         return result
-
+    
     @property
     def YCrCb(self):
         return self.palette[:, 0:3]
     @YCrCb.setter
     def YCrCb(self, value):
-        self.palette[:, 0:3] = value 
+        for entry, c in enumerate(value):
+            rowIndices = np.where(self.paletteTable[:, 0] == entry)
+            count = len(rowIndices[0])
+            if count:
+                self.paletteTable[rowIndices, 1:4] = c
+            else:
+                self.paletteTable = np.vstack((self.paletteTable, [entry, *c, 0]))
 
     @property
     def alpha(self):
         return self.palette[:, 3]
     @alpha.setter
     def alpha(self, value):
-        self.palette[:, 3] = value
+        for entry, a in enumerate(value):
+            rowIndices = np.where(self.paletteTable[:, 0] == entry)
+            count = len(rowIndices[0])
+            if count:
+                self.paletteTable[rowIndices, 4] = a
+            else:
+                self.paletteTable = np.vstack((self.paletteTable, [entry, 235, 128, 128, a]))
 
     @property
     def RGB(self):
@@ -436,8 +457,8 @@ class Segment:
     def __init__(self, stream):
         if stream.readWord() != b'PG':
             raise InvalidSegmentError
-        self.pts = stream.readUInt()
-        self.dts = stream.readUInt()
+        self._pts = stream.readUInt()
+        self._dts = stream.readUInt()
         self.type = SEGMENT_TYPE(stream.readByte())
         self.size = stream.readUShort()
         self.data = self.OPTION[self.type](stream, self)
@@ -447,51 +468,65 @@ class Segment:
 
     @property
     def raw(self):
-        result = self.pts.to_bytes(4, byteorder = 'big') + \
+        dataRaw = self.data.raw
+        result = b'PG' + \
+                self.pts.to_bytes(4, byteorder = 'big') + \
                 self.dts.to_bytes(4, byteorder = 'big') + \
                 self.type.value + \
-                self.size.to_bytes(2, byteorder = 'big') +\
-                self.data.raw
+                len(dataRaw).to_bytes(2, byteorder = 'big') + \
+                dataRaw
         return result
+    
+    @property
+    def pts(self):
+        return self._pts
+    @pts.setter
+    def pts(self, value):
+        if value > 4294967295:
+            print('Warning: [Set PTS] Time is larger than 4 bytes, 2^32 - 1 is used')
+            value = 4294967295
+        elif value < 0:
+            print('Warning: [Set PTS] Time cannot be negative, 0 is used')
+            value = 0
+        self._pts = value
+    
+    @property
+    def dts(self):
+        return self._dts
+    @pts.setter
+    def dts(self, value):
+        if value > 4294967295:
+            print('Warning: [Set DTS] Time is larger than 4 bytes, 2^32 - 1 is used')
+            value = 4294967295
+        elif value < 0:
+            print('Warning: [Set DTS] Time cannot be negative, 0 is used')
+            value = 0
+        self._dts = value
 
     @property
     def ptsms(self):
         return self.pts / 90
     @ptsms.setter
     def ptsms(self, value):
-        pts = round(value * 90)
-        if pts > 4294967295:
-            print('Warning: [Set PTS] Time is larger than 4 bytes, 2^32 - 1 is used')
-            pts = 4294967295
-        self.pts = pts
+        self.pts = round(value * 90)
 
     @property
     def dtsms(self):
         return self.dts / 90
     @dtsms.setter
     def dtsms(self, value):
-        dts = round(value * 90)
-        if dts > 4294967295:
-            print('Warning: [Set DTS] Time is larger than 4 bytes, 2^32 - 1 is used')
-            dts = 4294967295
-        self.dts = dts
+        self.dts = round(value * 90)
 
 class DisplaySet:
 
     def __init__(self, segments):
         self.segments = segments
-        self._prevDS = None
-    
+        self.prevDS = None
+        self.nextDS = self
+
     @property
     def raw(self):
         return b''.join(s.raw for s in self.segments)
-
-    @property
-    def prevDS(self):
-        return self._prevDS
-    @prevDS.setter
-    def prevDS(self, value):
-        self._prevDS = value
 
     @property
     def pcsSegment(self):
@@ -629,7 +664,6 @@ class SubPicture:
 
     def __init__(self, displaySet):
         self.displaySet = displaySet
-        self._endTime = None
 
     @property
     def raw(self):
@@ -644,14 +678,27 @@ class SubPicture:
     @property
     def startTime(self):
         return self.displaySet.pcsSegment.pts
+    @startTime.setter
+    def startTime(self, value):
+        for s in self.displaySet.segments:
+            s.pts = value
+            s.dts = 0
 
     @property
     def startTimems(self):
         return self.displaySet.pcsSegment.ptsms
+    @startTimems.setter
+    def startTimems(self, value):
+        for s in self.displaySet.segments:
+            s.ptsms = value
+            s.dts = 0
 
     @property
     def startTimehmsx(self):
         return ms2hmsx(self.startTimems)
+    @startTimehmsx.setter
+    def startTimehmsx(self, value):
+        self.startTimems = hmsx2ms(*value)
     
     @property
     def startTimeStr(self):
@@ -659,63 +706,57 @@ class SubPicture:
 
     @property
     def endTime(self):
-        return self._endTime
+        return self.displaySet.nextDS.pcsSegment.pts
     @endTime.setter
     def endTime(self, value):
-        self._endTime = value
+        for s in self.displaySet.nextDS.segments:
+            s.pts = value
+            s.dts = 0
 
     @property
     def endTimems(self):
-        if self.endTime is not None:
-            return self.endTime/90
-        else:
-            return None
+        return self.displaySet.nextDS.pcsSegment.ptsms
+    @endTimems.setter
+    def endTimems(self, value):
+        for s in self.displaySet.nextDS.segments:
+            s.ptsms = value
+            s.dts = 0
 
     @property
     def endTimehmsx(self):
-        t = self.endTimems
-        if t is not None:
-            return ms2hmsx(t)
-        else:
-            return None
+        return ms2hmsx(self.endTimems)
+    @endTimehmsx.setter
+    def endTimehmsx(self, value):
+        self.endTimems = hmsx2ms(*value)
     
     @property
     def endTimeStr(self):
-        t = self.endTimems 
-        if t is not None:
-            return ms2Str(t)
-        else:
-            return None
+        return ms2Str(self.endTimems)
 
     @property
     def duration(self):
-        if self.endTime is not None:
-            return self.endTime - self.startTime
-        else:
-            return None
+        return self.endTime - self.startTime
+    @duration.setter
+    def duration(self, value):
+        self.endTime = self.startTime + value
 
     @property
     def durationms(self):
-        if self.endTimems is not None:
-            return self.endTimems - self.startTimems
-        else:
-            return None
+        return self.endTimems - self.startTimems
+    @durationms.setter
+    def durationms(self, value):
+        self.endTimems = self.startTimems + value
   
     @property
     def durationhmsx(self):
-        t = self.durationms
-        if t is not None:
-            return ms2hmsx(t)
-        else:
-            return None
+        return ms2hmsx(self.durationms)
+    @durationhmsx.setter
+    def durationhmsx(self, value):
+        self.durationms = hmsx2ms(*value)
 
     @property
     def durationStr(self):
-        t = self.durationms
-        if t is not None:
-            return ms2Str(t)
-        else:
-            return None
+        return ms2Str(self.durationms)
 
     @property
     def maxAlpha(self):
@@ -741,6 +782,9 @@ def ms2hmsx(ms):
     m = (ms // 60000) % 60
     h = ms // 3600000
     return h, m ,s, x
+
+def hmsx2ms(h, m, s, x):
+    return x + s * 1000 + m * 60 * 1000 + h * 3600 * 1000
 
 def ms2hmsxInt(ms):
     return ms2hmsx(round(ms))
