@@ -1,3 +1,5 @@
+This is a toy project. Not even working correctly. Archived.
+
 # BDSupReader
 Original File | Images (converted to APNG) | Screen Images (converted to APNG)
 :-----------: | :------------------------: | :-------------------------------:
